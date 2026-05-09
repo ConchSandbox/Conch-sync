@@ -1,0 +1,53 @@
+name: Conch Sync
+
+on:
+  schedule:
+    - cron: "0 2,8,14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-conch-dev
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync AtomGit dev to GitHub dev
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.CONCH_SYNC_APP_ID }}
+          private-key: ${{ secrets.CONCH_SYNC_APP_PRIVATE_KEY }}
+          owner: ConchSandbox
+          repositories: Conch
+          permission-contents: write
+
+      - name: Sync dev branch
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+          SOURCE_REPO: https://atomgit.com/openeuler/Conch.git
+          TARGET_REPO: github.com/ConchSandbox/Conch.git
+        run: |
+          set -euo pipefail
+
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+
+          echo "Initializing temporary bare repository"
+          git init --bare "$workdir/repo.git"
+
+          cd "$workdir/repo.git"
+
+          echo "Fetching dev from AtomGit openeuler/Conch"
+          git remote add source "$SOURCE_REPO"
+          git fetch --no-tags source +refs/heads/dev:refs/heads/dev
+
+          echo "Pushing dev to GitHub ConchSandbox/Conch"
+          git remote add target "https://x-access-token:${TOKEN}@${TARGET_REPO}"
+          git push target +refs/heads/dev:refs/heads/dev
